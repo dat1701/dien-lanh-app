@@ -47,7 +47,11 @@ export function InventoryClient({ initialTransactions, products, suppliers }: Pr
     setImportOpen(false)
   }
 
-  const stockSummary = products.filter(p => p.stock_quantity <= p.min_stock)
+  // Chỉ cảnh báo sản phẩm có tồn kho > 0 nhưng dưới mức tối thiểu (min_stock > 0)
+  const stockSummary = products.filter(p => p.min_stock > 0 && p.stock_quantity <= p.min_stock && p.stock_quantity >= 0)
+  const outOfStock = products.filter(p => p.stock_quantity === 0 && p.min_stock > 0)
+  // 4 sản phẩm có tồn kho > 0, sắp xếp theo tồn kho thấp nhất
+  const topLowStock = products.filter(p => p.stock_quantity > 0).sort((a, b) => a.stock_quantity - b.stock_quantity).slice(0, 4)
 
   return (
     <div className="space-y-5">
@@ -61,27 +65,40 @@ export function InventoryClient({ initialTransactions, products, suppliers }: Pr
         </Button>
       </div>
 
-      {/* Stock summary */}
+      {/* Tổng quan tồn kho */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {products.slice(0, 4).map(p => (
-          <Card key={p.id} className={p.stock_quantity <= p.min_stock ? 'border-orange-300' : ''}>
-            <CardContent className="p-3">
-              <p className="text-xs text-slate-400 truncate">{p.name}</p>
-              <p
-                className={`text-xl font-bold mt-0.5 ${
-                  p.stock_quantity === 0 ? 'text-red-600' : p.stock_quantity <= p.min_stock ? 'text-orange-500' : 'text-slate-800'
-                }`}
-              >
-                {p.stock_quantity} <span className="text-xs font-normal text-slate-400">cái</span>
-              </p>
-            </CardContent>
-          </Card>
-        ))}
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-xs text-slate-400">Tổng sản phẩm</p>
+            <p className="text-2xl font-bold text-slate-800 mt-0.5">{products.length}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-xs text-slate-400">Còn hàng</p>
+            <p className="text-2xl font-bold text-green-600 mt-0.5">{products.filter(p => p.stock_quantity > 0).length}</p>
+          </CardContent>
+        </Card>
+        <Card className="border-orange-200">
+          <CardContent className="p-4">
+            <p className="text-xs text-slate-400">Sắp hết hàng</p>
+            <p className="text-2xl font-bold text-orange-500 mt-0.5">{stockSummary.length}</p>
+          </CardContent>
+        </Card>
+        <Card className="border-red-200">
+          <CardContent className="p-4">
+            <p className="text-xs text-slate-400">Hết hàng</p>
+            <p className="text-2xl font-bold text-red-600 mt-0.5">{products.filter(p => p.stock_quantity === 0).length}</p>
+          </CardContent>
+        </Card>
       </div>
 
+      {/* Cảnh báo sắp hết hàng — chỉ hiện khi có sản phẩm thực sự sắp hết */}
       {stockSummary.length > 0 && (
         <div className="bg-orange-50 border border-orange-200 rounded-lg px-4 py-3 text-sm text-orange-700">
-          ⚠️ <strong>{stockSummary.length} sản phẩm</strong> sắp hết hàng: {stockSummary.map(p => p.name).join(', ')}
+          ⚠️ <strong>{stockSummary.length} sản phẩm</strong> sắp hết hàng:{' '}
+          {stockSummary.slice(0, 5).map(p => p.name).join(', ')}
+          {stockSummary.length > 5 && ` và ${stockSummary.length - 5} sản phẩm khác...`}
         </div>
       )}
 
