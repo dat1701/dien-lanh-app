@@ -20,6 +20,7 @@ const TABS = ['Thông tin']
 
 interface OrderItem {
   id: string
+  product_id?: string
   product_name: string
   product_code: string
   quantity: number
@@ -61,6 +62,7 @@ const STATUS_FILTERS = [
   { value: 'cho_xu_ly', label: 'Chờ xử lý' },
   { value: 'dang_giao', label: 'Đang giao' },
   { value: 'hoan_thanh', label: 'Hoàn thành' },
+  { value: 'tra_hang', label: 'Trả hàng' },
   { value: 'huy', label: 'Huỷ' },
 ]
 
@@ -209,27 +211,51 @@ export function OrdersClient({ initialOrders, total, page, totalPages, pageSize,
     if (returnItems.length === 0) { setActionLoading(false); return }
     const returnTotal = returnItems.reduce((s, i) => s + i.sell_price * (returnQtys[i.id] || 0), 0)
     const code = 'TH' + Date.now().toString().slice(-8)
+
+    // Tạo phiếu trả hàng
     const { data: ret } = await supabase.from('return_orders').insert({
       code, order_id: order.id,
       customer_id: order.customer_id || null,
       customer_name: customerName(order), customer_phone: customerPhone(order),
       total: returnTotal, status: 'hoan_thanh', note: null,
     }).select().single()
+
     if (ret) {
+      // Lưu chi tiết trả hàng
       await supabase.from('return_order_items').insert(returnItems.map(i => ({
-        return_order_id: ret.id, product_id: null,
-        product_name: i.product_name, quantity: returnQtys[i.id] || 0,
+        return_order_id: ret.id,
+        product_id: i.product_id || null,
+        product_name: i.product_name,
+        quantity: returnQtys[i.id] || 0,
         sell_price: i.sell_price,
       })))
-      // tạo giao dịch nhập kho trả hàng
+
+      // Hoàn kho: dùng product_id từ order_items để trigger tự cộng lại tồn kho
       for (const i of returnItems) {
-        await supabase.from('stock_transactions').insert({
-          product_id: null, type: 'tra_hang',
-          quantity: returnQtys[i.id] || 0, price: i.sell_price,
-          note: `Trả hàng đơn ${order.code}`,
-        })
+        if (i.product_id) {
+          await supabase.from('stock_transactions').insert({
+            product_id: i.product_id,
+            type: 'tra_hang',
+            quantity: returnQtys[i.id] || 0,
+            price: i.sell_price,
+            order_id: order.id,
+            note: `Trả hàng đơn ${order.code}`,
+          })
+        }
       }
-      alert(`Đã tạo phiếu trả hàng: ${code} — ${formatVND(returnTotal)}`)
+
+      // Cập nhật trạng thái đơn gốc → tra_hang
+      const { data: updatedOrder } = await supabase
+        .from('orders')
+        .update({ status: 'tra_hang' })
+        .eq('id', order.id)
+        .select()
+        .single()
+      if (updatedOrder) {
+        setOrders(prev => prev.map(o => o.id === updatedOrder.id ? { ...o, status: 'tra_hang' } : o))
+      }
+
+      alert(`✅ Trả hàng thành công!\nMã phiếu: ${code}\nTiền hoàn: ${formatVND(returnTotal)}\nTồn kho đã được cộng lại.`)
     }
     setReturnDialog(null)
     setActionLoading(false)

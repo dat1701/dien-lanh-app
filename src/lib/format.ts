@@ -28,6 +28,7 @@ export const STATUS_LABELS: Record<string, string> = {
   dang_giao: 'Đang giao',
   hoan_thanh: 'Hoàn thành',
   huy: 'Huỷ',
+  tra_hang: 'Trả hàng',
 }
 
 export const PAYMENT_LABELS: Record<string, string> = {
@@ -42,4 +43,5 @@ export const STATUS_COLORS: Record<string, string> = {
   dang_giao: 'bg-blue-100 text-blue-700',
   hoan_thanh: 'bg-green-100 text-green-700',
   huy: 'bg-red-100 text-red-700',
+  tra_hang: 'bg-purple-100 text-purple-700',
 }
