@@ -212,25 +212,38 @@ export function OrdersClient({ initialOrders, total, page, totalPages, pageSize,
     const returnTotal = returnItems.reduce((s, i) => s + i.sell_price * (returnQtys[i.id] || 0), 0)
     const code = 'TH' + Date.now().toString().slice(-8)
 
-    // Tạo phiếu trả hàng
-    const { data: ret } = await supabase.from('return_orders').insert({
-      code, order_id: order.id,
+    // Tạo phiếu trả hàng (dùng đúng schema: subtotal, refund_amount, status='da_tra')
+    const { data: ret, error: retErr } = await supabase.from('return_orders').insert({
+      code,
+      order_id: order.id,
+      order_code: order.code,
       customer_id: order.customer_id || null,
-      customer_name: customerName(order), customer_phone: customerPhone(order),
-      total: returnTotal, status: 'hoan_thanh', note: null,
+      customer_name: customerName(order),
+      customer_phone: customerPhone(order),
+      subtotal: returnTotal,
+      refund_amount: returnTotal,
+      status: 'da_tra',
+      note: null,
     }).select().single()
 
+    if (retErr) {
+      console.error('Return order error:', retErr)
+      alert('Lỗi tạo phiếu trả hàng: ' + retErr.message)
+      setActionLoading(false)
+      return
+    }
+
     if (ret) {
-      // Lưu chi tiết trả hàng
+      // Lưu chi tiết trả hàng (schema: product_id, quantity, sell_price, total)
       await supabase.from('return_order_items').insert(returnItems.map(i => ({
         return_order_id: ret.id,
         product_id: i.product_id || null,
-        product_name: i.product_name,
         quantity: returnQtys[i.id] || 0,
         sell_price: i.sell_price,
+        total: i.sell_price * (returnQtys[i.id] || 0),
       })))
 
-      // Hoàn kho: dùng product_id từ order_items để trigger tự cộng lại tồn kho
+      // Hoàn kho: chỉ chạy khi có product_id, trigger tự cộng tồn kho
       for (const i of returnItems) {
         if (i.product_id) {
           await supabase.from('stock_transactions').insert({
@@ -245,17 +258,23 @@ export function OrdersClient({ initialOrders, total, page, totalPages, pageSize,
       }
 
       // Cập nhật trạng thái đơn gốc → tra_hang
-      const { data: updatedOrder } = await supabase
+      const { data: updatedOrder, error: updateErr } = await supabase
         .from('orders')
         .update({ status: 'tra_hang' })
         .eq('id', order.id)
         .select()
         .single()
-      if (updatedOrder) {
-        setOrders(prev => prev.map(o => o.id === updatedOrder.id ? { ...o, status: 'tra_hang' } : o))
-      }
 
-      alert(`✅ Trả hàng thành công!\nMã phiếu: ${code}\nTiền hoàn: ${formatVND(returnTotal)}\nTồn kho đã được cộng lại.`)
+      if (updateErr) {
+        // migration_v4 chưa chạy → thông báo nhắc nhở
+        console.error('Update status error:', updateErr)
+        alert(`✅ Phiếu trả hàng ${code} đã tạo!\nTiền hoàn: ${formatVND(returnTotal)}\n\n⚠️ Để hiển thị trạng thái "Trả hàng", hãy chạy migration_v4.sql trong Supabase SQL Editor.`)
+      } else {
+        if (updatedOrder) {
+          setOrders(prev => prev.map(o => o.id === updatedOrder.id ? { ...o, status: 'tra_hang' } : o))
+        }
+        alert(`✅ Trả hàng thành công!\nMã phiếu: ${code}\nTiền hoàn: ${formatVND(returnTotal)}\nTồn kho đã được cộng lại.`)
+      }
     }
     setReturnDialog(null)
     setActionLoading(false)
